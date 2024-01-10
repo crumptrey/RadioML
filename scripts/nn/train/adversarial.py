@@ -29,9 +29,9 @@ class AdversarialTrainingStrategy(StandardTrainingStrategy):
         the perturbation in order to maintain some signal-to-perturbation ratio by
         assuming that the signal as an average energy per symbol of 1.  This isn't a
         problem when this training strategy is used in conjunction with the neural
-        networks from this library as the first step in these networks is to scale the
+        net from this library as the first step in these net is to scale the
         normalize the input power anyways which undoes any transformation done here.
-        However, if, for some reason, your networks do not normalize the input then this
+        However, if, for some reason, your net do not normalize the input then this
         can lead to undesirable behavior.
 
     Reference:

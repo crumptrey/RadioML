@@ -29,7 +29,7 @@ class CNN(Model):
 
     References
         T. J. O'Shea, J. Corgan, and T. C. Clancy, “Convolutional radio modulation
-        recognition networks,” in International Conference on Engineering Applications
+        recognition net,” in International Conference on Engineering Applications
         of Neural Networks, pp. 213–226, Springer,2016.
 
         N. E. West and T. O’Shea, “Deep architectures for modulation recognition,” in
@@ -37,7 +37,7 @@ class CNN(Model):
         1–6, IEEE, 2017.
 
         S. C. Hauser, W. C. Headley, and A. J.  Michaels, “Signal detection effects on
-        deep neural networks utilizing raw iq for modulation classification,” in
+        deep neural net utilizing raw iq for modulation classification,” in
         Military Communications Conference, pp. 121–127, IEEE, 2017.
     """
 

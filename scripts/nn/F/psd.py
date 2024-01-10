@@ -10,8 +10,6 @@ from .energy import energy
 
 
 def psd(x: torch.Tensor) -> torch.Tensor:
-    # TODO allow the user to specify the number of FFT points in the future
-    #      thus, we'd have to chop up or pad the signal here in an intelligent manner
     channel_dim = 1
     iq_dim = 2
     time_dim = 3
@@ -22,7 +20,6 @@ def psd(x: torch.Tensor) -> torch.Tensor:
             "your input had shape {}".format(x.size())
         )
     if x.size()[channel_dim] != 1:
-        # TODO handle multiple channels more intelligently
         raise ValueError(
             "The input tensor must only contain a single channel -- "
             "your's contained {}".format(x.size()[channel_dim])

@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from scipy.fftpack import fft
 from scipy.signal import find_peaks
 from scipy.interpolate import interp1d
-from data_utils import plotSignalAndSpectrum
+
 
 def EMD(signal, maxIMFs, samplingFreq):
 	tAxis = np.linspace(0, len(signal) / samplingFreq, len(signal))
