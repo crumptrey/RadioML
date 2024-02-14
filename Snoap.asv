@@ -1,0 +1,38 @@
+filter_size = 23
+layers = [
+    sequenceInputLayer([2 1024])
+
+    convolution1dLayer(filter_size, 16)
+    batchNormalizationLayer()
+    reluLayer
+    maxPooling1dLayer(2)
+
+    convolution1dLayer(filter_size, 24)
+    batchNormalizationLayer()
+    reluLayer
+    maxPooling1dLayer(2)
+
+    convolution1dLayer(filter_size, 32)
+    batchNormalizationLayer()
+    reluLayer
+    maxPooling1dLayer(2)
+    
+    convolution1dLayer(filter_size, 48)
+    batchNormalizationLayer()
+    reluLayer
+    maxPooling1dLayer(2)
+
+    convolution1dLayer(filter_size, 64)
+    batchNormalizationLayer()
+    reluLayer
+    maxPooling1dLayer(2)
+
+    convolution1dLayer(filter_size, 96)
+    batchNormalizationLayer()
+    reluLayer
+
+    averagePooling1dLayer(2)
+    dropoutLayer(0.5)
+    linearlayer()
+
+]
