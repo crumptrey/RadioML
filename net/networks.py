@@ -1,3 +1,11 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from math import sqrt
+
+import einops
+from einops.layers.torch import Reduce
+import torch
 import torch.nn as nn
 
 
@@ -165,4 +173,222 @@ class Snoap_ResidualNN(nn.Module):
 		print("res_stack out {}".format(out.size()))
 		out = self.final_layers(out)
 		return out
+
+
+class EncoderLayer(nn.Module):
+	def __init__(self, embedding_dim, num_heads, dropout_rate=0.1):
+		super(EncoderLayer, self).__init__()
+		self.attention = nn.MultiheadAttention(embedding_dim, num_heads, dropout=dropout_rate)
+		self.dropout1 = nn.Dropout(dropout_rate)
+		self.layer_norm1 = nn.LayerNorm(embedding_dim)
+		self.feedforward = nn.Sequential(
+			nn.Linear(embedding_dim, 4 * embedding_dim),
+			nn.ReLU(),
+			nn.Linear(4 * embedding_dim, embedding_dim)
+		)
+		self.dropout2 = nn.Dropout(dropout_rate)
+		self.layer_norm2 = nn.LayerNorm(embedding_dim)
+
+	def forward(self, src, src_mask=None):
+		src2, _ = self.attention(src, src, src, attn_mask=src_mask)
+		src = src + self.dropout1(src2)
+		src = self.layer_norm1(src)
+		src2 = self.feedforward(src)
+		src = src + self.dropout2(src2)
+		src = self.layer_norm2(src)
+		return src
+
+
+class PositionalEncoding(nn.Module):
+	def __init__(self, embedding_dim, max_seq_length=1024):
+		super(PositionalEncoding, self).__init__()
+		self.dropout = nn.Dropout(p=0.1)
+
+		# Compute the positional encodings in advance
+		pe = torch.zeros(max_seq_length, embedding_dim)
+		position = torch.arange(0, max_seq_length, dtype=torch.float).unsqueeze(1)
+		div_term = torch.exp(torch.arange(0, embedding_dim, 2).float() * (
+					-torch.log(torch.tensor(10000.0)) / embedding_dim))
+		pe[:, 0::2] = torch.sin(position * div_term)
+		pe[:, 1::2] = torch.cos(position * div_term)
+		pe = pe.unsqueeze(0)  # Add batch dimension
+		self.register_buffer('pe', pe)
+
+	def forward(self, x):
+		# Adjust the positional encodings to match the input tensor size
+		pe = self.pe[:, :x.size(1)]  # Trim or repeat positional encodings as needed
+		print("Shape of x:", x.shape)
+		print("Shape of pe:", pe.shape)
+		x = x + pe
+		return self.dropout(x)
+
+
+class Base_Transformer(nn.Module):
+	def __init__(self, num_layers, embedding_dim, num_heads, dropout_rate=0.1):
+		super(Base_Transformer, self).__init__()
+		self.embedding_dim = embedding_dim
+		self.pos_encoder = PositionalEncoding(embedding_dim)
+		self.layers = nn.ModuleList(
+			[EncoderLayer(embedding_dim, num_heads, dropout_rate) for _ in range(num_layers)])
+		self.norm = nn.LayerNorm(embedding_dim)
+
+	def forward(self, src, src_mask=None):
+		src = self.pos_encoder(src)
+		for layer in self.layers:
+			src = layer(src, src_mask)
+		return self.norm(src)
+
+
+
+
+
+class LinearEmbedding(nn.Sequential):
+
+	def __init__(self, input_channels, output_channels) -> None:
+		super().__init__(*[
+			nn.Linear(input_channels, output_channels),
+			nn.LayerNorm(output_channels),
+			nn.GELU()
+		])
+		self.cls_token = nn.Parameter(torch.randn(1, output_channels))
+
+	def forward(self, x):
+		embedded = super().forward(x)
+		return torch.cat([einops.repeat(self.cls_token, "n e -> b n e", b=x.shape[0]), embedded],
+		                 dim=1)
+
+
+class MLP(nn.Sequential):
+	def __init__(self, input_channels, expansion=4):
+		super().__init__(*[
+			nn.Linear(input_channels, input_channels * expansion),
+			nn.GELU(),
+			nn.Linear(input_channels * expansion, input_channels)
+		])
+
+
+class ResidualAdd(torch.nn.Module):
+	def __init__(self, block):
+		super().__init__()
+		self.block = block
+
+	def forward(self, x):
+		return x + self.block(x)
+
+
+class MultiHeadAttention(torch.nn.Module):
+	def __init__(self, embed_size, num_heads, attention_store=None):
+		super().__init__()
+		self.queries_projection = nn.Linear(embed_size, embed_size)
+		self.values_projection = nn.Linear(embed_size, embed_size)
+		self.keys_projection = nn.Linear(embed_size, embed_size)
+		self.final_projection = nn.Linear(embed_size, embed_size)
+		self.embed_size = embed_size
+		self.num_heads = num_heads
+
+	def forward(self, x):
+		assert len(x.shape) == 3
+		keys = self.keys_projection(x)
+		values = self.values_projection(x)
+		queries = self.queries_projection(x)
+		keys = einops.rearrange(keys, "b n (h e) -> b n h e", h=self.num_heads)
+		queries = einops.rearrange(queries, "b n (h e) -> b n h e", h=self.num_heads)
+		values = einops.rearrange(values, "b n (h e) -> b n h e", h=self.num_heads)
+		energy_term = torch.einsum("bqhe, bkhe -> bqhk", queries, keys)
+		divider = sqrt(self.embed_size)
+		mh_out = torch.softmax(energy_term, -1)
+		out = torch.einsum('bihv, bvhd -> bihd ', mh_out / divider, values)
+		out = einops.rearrange(out, "b n h e -> b n (h e)")
+		return self.final_projection(out)
+
+
+class TransformerEncoderLayer(torch.nn.Sequential):
+	def __init__(self, embed_size=768, expansion=4, num_heads=8, dropout=0.1):
+		super(TransformerEncoderLayer, self).__init__(
+			*[
+				ResidualAdd(nn.Sequential(*[
+					nn.LayerNorm(embed_size),
+					MultiHeadAttention(embed_size, num_heads),
+					nn.Dropout(dropout)
+				])),
+				ResidualAdd(nn.Sequential(*[
+					nn.LayerNorm(embed_size),
+					MLP(embed_size, expansion),
+					nn.Dropout(dropout)
+				]))
+			]
+		)
+
+
+class Classifier(nn.Sequential):
+	def __init__(self, embed_size, num_classes):
+		super().__init__(*[
+			Reduce("b n e -> b e", reduction="mean"),
+			nn.Linear(embed_size, embed_size),
+			nn.LayerNorm(embed_size),
+			nn.Linear(embed_size, num_classes)
+		])
+
+
+class ECGformer(nn.Module):
+
+	def __init__(self, num_layers, signal_length, num_classes, input_channels, embed_size,
+	             num_heads, expansion) -> None:
+		super().__init__()
+		self.encoder = nn.ModuleList([TransformerEncoderLayer(
+			embed_size=embed_size, num_heads=num_heads, expansion=expansion) for _ in
+			range(num_layers)])
+		self.classifier = Classifier(embed_size, num_classes)
+		self.positional_encoding = nn.Parameter(torch.randn(signal_length + 1, embed_size))
+		self.embedding = LinearEmbedding(input_channels, embed_size)
+
+	def forward(self, x):
+		embedded = self.embedding(x)
+
+		for layer in self.encoder:
+			embedded = layer(embedded + self.positional_encoding)
+
+		return self.classifier(embedded)
+
+
+class LinearEmbedding2D(nn.Sequential):
+	def __init__(self, input_height, input_width, input_channels, output_channels):
+		super().__init__(
+			nn.Linear(input_height * input_width * input_channels, output_channels),
+			nn.LayerNorm(output_channels),
+			nn.GELU()
+		)
+		self.cls_token = nn.Parameter(torch.randn(1, output_channels))
+
+	def forward(self, x):
+		b, c, h, w = x.shape
+		x = x.view(b, c * h * w)
+		embedded = super().forward(x)
+		return torch.cat([einops.repeat(self.cls_token, "n e -> b n e", b=b), embedded], dim=1)
+
+
+class ECGformer2D(nn.Module):
+	def __init__(self, num_layers, input_height, input_width, num_classes, input_channels,
+	             embed_size, num_heads, expansion):
+		super().__init__()
+		self.encoder = nn.ModuleList([TransformerEncoderLayer(embed_size=embed_size,
+		                                                      num_heads=num_heads,
+		                                                      expansion=expansion) for _ in
+		                              range(num_layers)])
+		self.classifier = Classifier(embed_size, num_classes)
+		self.positional_encoding_height = nn.Parameter(torch.randn(input_height + 1, embed_size))
+		self.positional_encoding_width = nn.Parameter(torch.randn(input_width + 1, embed_size))
+		self.embedding = LinearEmbedding2D(input_height, input_width, input_channels, embed_size)
+
+	def forward(self, x):
+		embedded = self.embedding(x)
+		b, n, _ = embedded.shape
+		h = self.positional_encoding_height.unsqueeze(1).repeat(1, n, 1)
+		w = self.positional_encoding_width.unsqueeze(0).repeat(b, n, 1)
+		positional_encoding = h + w
+
+		for layer in self.encoder:
+			embedded = layer(embedded + positional_encoding)
+
+		return self.classifier(embedded)
 

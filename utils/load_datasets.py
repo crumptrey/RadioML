@@ -7,8 +7,9 @@ import matplotlib.pyplot as plt
 from torchvision.io import read_image
 import pickle
 import numpy as np
-import h5py
 import json
+import glob
+import h5py
 
 MOD_TYPES = {'AM-SSB', 'CPFSK', 'QPSK', 'GFSK', 'PAM4', 'QAM16', 'WBFM', '8PSK', 'QAM64', 'AM-DSB',
              'BPSK'}
@@ -155,5 +156,32 @@ class DeepSig2018Dataset(Dataset):
 
 	def __getitem__(self, idx):
 		x, y, z = self.X_data[idx], self.Y_data[idx], self.Z_data[idx]
-		x, y, z = torch.Tensor(x).transpose(0, 1), y, z
+		x, y, z = torch.Tensor(x), y, z
 		return x, y, z
+
+
+class MatDataset(Dataset):
+	def __init__(self, mat_directory):
+		self.mat_files = glob.glob(os.path.join(mat_directory, '*.mat'))
+		self.loaded_data = {}
+
+		for mat_file in self.mat_files:
+			with h5py.File(mat_file, 'r') as file:
+				# Extract variable name from the file name (modify this based on your naming convention)
+				variable_name = os.path.splitext(os.path.basename(mat_file))[0]
+
+				# Store the h5py File object in the dictionary
+				self.loaded_data[variable_name] = file
+
+	def __len__(self):
+		return len(self.mat_files)
+
+	def __getitem__(self, idx):
+		# Access data from the loaded_data dictionary using the idx
+		variable_name = os.path.splitext(os.path.basename(self.mat_files[idx]))[0]
+		data = self.loaded_data[variable_name]['your_dataset_key'][:]  # Modify 'your_dataset_key'
+
+		# Convert data to PyTorch tensor if needed
+		data_tensor = torch.from_numpy(data)
+
+		return data_tensor

@@ -61,12 +61,26 @@ def evaluate(model, data_loader, criterion, phase):
 		plt.grid(True)
 		plt.show()
 
-model = networks.Snoap_CNN(num_classes=11)
+
+num_classes = 11  # Number of output classes
+src = torch.rand(32, 1024, 2)
+model = networks.ECGformer(num_layers=6, signal_length=1024, num_classes=num_classes,
+                           input_channels=2,
+                           embed_size=1024, num_heads=8, expansion=4)
+out = model(src)
+print(out)
+batch_size = 32
+num_channels = 2  # Number of I/Q channels
+sequence_length = 1024  # Length of each sequence
+embedding_dim = 512
+num_heads = 8
+num_layers = 4
+dropout_rate = 0.1
 model = model.to(device)
 
 # Define your loss function and optimizer
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.Adam(model.parameters(), lr=0.001)
+optimizer = optim.Adam(model.parameters(), lr=0.0001)
 
 # Define the split ratios
 train_ratio, val_ratio, test_ratio = 0.75, 0.125, 0.125
@@ -90,6 +104,7 @@ test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 epochs = 12
 
 for epoch in range(epochs):
+	print('training')
 	model.train()
 	total_train_loss = 0.0
 
@@ -97,8 +112,6 @@ for epoch in range(epochs):
 		data, mod_types, snrs = train_batch
 		data = data.to(device)
 		labels = mod_types.to(device)
-
-		print(data.size())
 
 		optimizer.zero_grad()
 		outputs = model(data)
